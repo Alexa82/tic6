@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Quiz TIC — Versão Melhorada</title>
+  <style>
+    :root{--bg1:#6a11cb; --bg2:#2575fc; --panel:#0f172a; --accent:#00d4ff; --gold:#ffd700}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"Segoe UI",system-ui,Arial;background:linear-gradient(135deg,var(--bg1),var(--bg2));
+         display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden;color:#fff}
+    canvas{background:#0b1022;border-radius:18px;box-shadow:0 16px 54px rgba(0,0,0,.45);max-width:100%;max-height:100vh}
+    .hud{position:absolute; top:12px; left:12px; background:rgba(0,0,0,.5); padding:8px 12px; border-radius:10px; font-weight:700}
+    .hud.right{left:auto; right:12px}
+    .overlay{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none}
+    .card{pointer-events:auto; width:min(760px,92vw); background:rgba(15,23,42,.92); border:1px solid rgba(255,255,255,.08);
+          border-radius:18px; padding:24px; text-align:center; box-shadow:0 18px 50px rgba(0,0,0,.55)}
+    .btn{display:inline-block;background:linear-gradient(135deg,var(--accent),#0ea5e9);color:#001118;border:none;border-radius:999px;
+         font-weight:700;padding:12px 22px;margin-top:10px;cursor:pointer;box-shadow:0 10px 30px rgba(0,212,255,.35)}
+    .chip{display:inline-flex;gap:6px;align-items:center;background:rgba(255,255,255,.08); padding:8px 12px; border-radius:999px; margin:6px 6px 0 0}
+    .options{margin-top:14px; display:grid; gap:12px; text-align:left}
+    .opt{padding:14px 16px; border-radius:12px; background:rgba(255,255,255,.07); border:2px solid rgba(255,255,255,.12); cursor:pointer}
+    .opt:hover{transform:scale(1.02); border-color:var(--accent); background:rgba(0,212,255,.18)}
+    .opt.correct{border-color:#22c55e; background:rgba(34,197,94,.22)}
+    .opt.wrong{border-color:#ef4444; background:rgba(239,68,68,.22)}
+    .explain{margin-top:10px; background:rgba(255,255,255,.06); border-left:4px solid #f59e0b; padding:10px 12px; border-radius:10px}
+    .progress{height:12px;background:rgba(255,255,255,.1);border-radius:999px;margin-top:12px;overflow:hidden}
+    .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--gold));transition:width .5s}
+    .hidden{display:none!important}
+    h1{font-size:clamp(1.6rem,2.2vw + .8rem,2.2rem);margin-bottom:4px;text-shadow:0 0 24px rgba(0,212,255,.35)}
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <!-- HUD -->
+  <div id="hudScore" class="hud hidden">💎 Pontos: <span id="score">0</span></div>
+  <div id="hudLevel" class="hud right hidden">📘 Nível: <span id="lvl">1</span>/<span id="total">10</span></div>
+  <button id="menuBtn" class="hud" style="top:52px;left:12px;display:none">🏠 Menu</button>
+  <button id="muteBtn" class="hud right" style="top:52px;right:12px;display:none">🔊 Som</button>
+
+  <!-- Menu -->
+  <div id="menu" class="overlay">
+    <div class="card">
+      <h1>🧭 Explorador Digital — Quiz TIC</h1>
+      <p>Versão com melhorias: som controlável, atalhos de teclado, registo de recorde e botão de regresso ao menu.</p>
+      <div>
+        <span class="chip">⌨️ ↑/↓ e Enter • 1–4</span>
+        <span class="chip">🔊 Som ligado/desligado</span>
+        <span class="chip">🏅 Recorde: <span id="best">0</span> pts</span>
+      </div>
+      <button id="start" class="btn">🚀 Iniciar</button>
+    </div>
+  </div>
+
+  <!-- Painel Quiz -->
+  <div id="panel" class="overlay hidden">
+    <div class="card" style="text-align:left">
+      <div class="progress"><div id="bar" class="fill"></div></div>
+      <h2 id="qTitle" style="margin-top:8px">Missão 1</h2>
+      <p id="qText" style="font-size:1.05rem;margin-top:6px"></p>
+      <div id="opts" class="options"></div>
+      <div id="explain" class="explain hidden"></div>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div id="over" class="overlay hidden">
+    <div class="card" style="text-align:center">
+      <h1 id="resultTitle">🎉 Missão concluída!</h1>
+      <p id="summary"></p>
+      <div class="progress" style="margin-top:12px"><div id="finalBar" class="fill"></div></div>
+      <p id="badge" style="font-size:1.6rem;margin-top:10px"></p>
+      <button id="again" class="btn">🔄 Jogar novamente</button>
+    </div>
+  </div>
+
+<script>
+// ==== Responsive canvas particles ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+function resize(){canvas.width=Math.min(1000, innerWidth-40); canvas.height=Math.min(640, innerHeight-40)};
+addEventListener('resize', resize); resize();
+const parts = Array.from({length:60}, () => ({x:Math.random()*canvas.width, y:Math.random()*canvas.height, r:Math.random()*2+1, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, a:Math.random()*.6+.2}));
+(function loop(){
+  ctx.fillStyle='#0b1022'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(const p of parts){ p.x+=p.vx; p.y+=p.vy; if(p.x<0)p.x=canvas.width; if(p.x>canvas.width)p.x=0; if(p.y<0)p.y=canvas.height; if(p.y>canvas.height)p.y=0;
+    ctx.fillStyle=`rgba(0,212,255,${p.a})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
+  requestAnimationFrame(loop);
+})();
+
+// ==== Sample questions (place yours here) ====
+const QUESTIONS=[
+  {q:"Exemplo: O que é um sistema operativo?", a:["Jogo","Coordena hardware e software","Monitor","Rato"], c:1, e:"É o software base que gere todo o computador."},
+  {q:"Atalho para criar pasta no Windows:", a:["Ctrl+N","Ctrl+Shift+N","Alt+F4","F1"], c:1, e:"Ctrl+Shift+N cria uma nova pasta rapidamente."},
+  {q:"HTTPS significa:", a:["Rápido","Seguro","Pago","Antigo"], c:1, e:"O 'S' significa Secure (ligação cifrada)."},
+  {q:"Palavra‑passe forte é:", a:["joao2009","Escola123","Gato!Rio7#","dataNascimento"], c:2, e:"Mistura maiúsculas, minúsculas, números e símbolos."}
+];
+const total=QUESTIONS.length;
+
+// ==== State & UI ====
+let level=1, score=0, locked=false, muted=false, focusIdx=0;
+const hudScore=document.getElementById('hudScore'), hudLevel=document.getElementById('hudLevel');
+const scoreEl=document.getElementById('score'), lvlEl=document.getElementById('lvl'), totalEl=document.getElementById('total'); totalEl.textContent=total;
+const bar=document.getElementById('bar'), finalBar=document.getElementById('finalBar');
+const menu=document.getElementById('menu'), panel=document.getElementById('panel'), over=document.getElementById('over');
+const qTitle=document.getElementById('qTitle'), qText=document.getElementById('qText'), opts=document.getElementById('opts'), explain=document.getElementById('explain');
+const bestEl=document.getElementById('best');
+const startBtn=document.getElementById('start'), againBtn=document.getElementById('again'), muteBtn=document.getElementById('muteBtn'), menuBtn=document.getElementById('menuBtn');
+bestEl.textContent = localStorage.getItem('quizBest') || 0;
+
+function beep(type='ok'){ if(muted) return; const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return; const ac=new AC(); const o=ac.createOscillator(); const g=ac.createGain(); o.connect(g); g.connect(ac.destination);
+  const map={ok:[740,.16],bad:[220,.22],win:[880,.4]}; const [f,t]=map[type]||map.ok; o.frequency.value=f; g.gain.value=.22; g.gain.exponentialRampToValueAtTime(.01, ac.currentTime+t); o.start(); o.stop(ac.currentTime+t); }
+
+function start(){ menu.classList.add('hidden'); panel.classList.remove('hidden'); hudScore.classList.remove('hidden'); hudLevel.classList.remove('hidden'); muteBtn.style.display='inline-block'; menuBtn.style.display='inline-block';
+  level=1; score=0; updateHud(); load(); beep('ok'); }
+function backToMenu(){ panel.classList.add('hidden'); over.classList.add('hidden'); hudScore.classList.add('hidden'); hudLevel.classList.add('hidden'); muteBtn.style.display='none'; menuBtn.style.display='none'; menu.classList.remove('hidden'); }
+function updateHud(){ scoreEl.textContent=score; lvlEl.textContent=level; bar.style.width=((level-1)/total*100).toFixed(1)+'%'; }
+function load(){ explain.classList.add('hidden'); opts.innerHTML=''; const q=QUESTIONS[level-1]; qTitle.textContent=`Missão ${level}`; qText.textContent=q.q;
+  q.a.forEach((t,i)=>{ const b=document.createElement('button'); b.className='opt'; b.innerHTML=`<strong>${i+1}.</strong> ${t}`; b.onclick=()=>pick(i); opts.appendChild(b); }); locked=false; focusIdx=0; highlight(); }
+function highlight(){ [...opts.children].forEach((el,i)=> el.style.outline = i===focusIdx ? '3px solid var(--gold)' : 'none'); }
+function pick(i){ if(locked) return; locked=true; const q=QUESTIONS[level-1]; const nodes=[...opts.children]; nodes[q.c].classList.add('correct'); if(i!==q.c){nodes[i].classList.add('wrong'); beep('bad');} else {score+=100+level*5; beep('ok');}
+  explain.textContent=(i===q.c?'✔️ Correto! ':'ℹ️ Quase! ')+q.e; explain.classList.remove('hidden'); setTimeout(next,1100); }
+function next(){ level++; if(level>total) return end(); updateHud(); load(); }
+function end(){ panel.classList.add('hidden'); hudScore.classList.add('hidden'); hudLevel.classList.add('hidden'); over.classList.remove('hidden'); const pct=Math.round(score/(total*100)*100); finalBar.style.width=pct+'%';
+  document.getElementById('summary').textContent=`Pontuação final: ${score} pontos (${pct}%)`;
+  let title='🏅 Explorador em treino', badge='🥉 Bronze'; if(pct>=90){title='🌟 Mestre Explorador Digital'; badge='🏆 Ouro'; beep('win');} else if(pct>=70){title='👏 Excelente progresso!'; badge='🥈 Prata';}
+  document.getElementById('resultTitle').textContent=title; document.getElementById('badge').textContent=badge;
+  const best=parseInt(localStorage.getItem('quizBest')||'0'); if(score>best){ localStorage.setItem('quizBest', String(score)); bestEl.textContent=score; } }
+
+startBtn.onclick=start; againBtn.onclick=()=>{ over.classList.add('hidden'); menu.classList.remove('hidden'); };
+muteBtn.onclick=()=>{ muted=!muted; muteBtn.textContent = muted?'🔇 Som':'🔊 Som'; };
+menuBtn.onclick=backToMenu;
+
+addEventListener('keydown', e=>{ if(panel.classList.contains('hidden')) return;
+  const map={'1':0,'2':1,'3':2,'4':3}; if(map.hasOwnProperty(e.key)){ pick(map[e.key]); return; }
+  if(e.key==='ArrowDown'){ focusIdx=(focusIdx+1)%opts.children.length; highlight(); }
+  if(e.key==='ArrowUp'){ focusIdx=(focusIdx-1+opts.children.length)%opts.children.length; highlight(); }
+  if(e.key==='Enter'){ pick(focusIdx); }
+});
+</script>
+</body>
+</html>
